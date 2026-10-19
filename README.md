@@ -1,100 +1,71 @@
-# 📬 Smart Inbox
+# Smart-Inbox
 
-AI-powered email triage, as a full product. Incoming email is classified by an
-LLM into **Urgent / Lead / Support / Newsletter / Other**, routed to Discord +
-Google Sheets, and surfaced on a live, multi-user dashboard.
+![CI](https://github.com/fizaamjd/Smart-Inbox/actions/workflows/ci.yml/badge.svg?branch=main)
 
-```
-Gmail ─▶ n8n workflow ─▶ Groq (classify + enrich)
-                         ├─▶ Discord alerts
-                         ├─▶ Google Sheets log
-                         └─▶ Backend API ─▶ MongoDB ─▶ React dashboard
-```
+Smart Inbox is an email-triage dashboard with a Node/Express API, MongoDB storage and an optional n8n automation. It classifies messages as Urgent, Lead, Support, Newsletter or Other using Groq when configured, with a keyword fallback when the model is unavailable.
 
-## Repository layout
+## Live demo video
 
-```
-Smart-Inbox/
-├── backend/     — the API + database (Node/Express + MongoDB)
-├── frontend/    — the dashboard + landing page (React + Vite + Tailwind)
-├── n8n/         — the automation workflow (the only part that touches Gmail)
-├── docker-compose.yml   — run everything locally in one command
-└── render.yaml          — deploy blueprint (Render)
-```
+https://github.com/user-attachments/assets/c9ac15b5-fda7-4c13-ac75-2968706ebe76
 
-Each folder is self-contained and has its own README where useful.
+[Download video](docs/media/smart-inbox-demo.mp4) · [HTML presentation source](docs/media/smart-inbox-demo.html)
 
----
+[Open Smart Inbox](https://smart-inbox-six.vercel.app/). The presentation uses illustrative email/account data and simulated workflow states; it does not prove real delivery latency or mailbox access.
 
-## What each part does
+## Architecture
 
-### `backend/` — the brain and the storage
-A small **Express API backed by MongoDB**. It is the single source of truth for
-the dashboard. It handles:
-
-- **Accounts & auth** — signup / login with JWT + bcrypt (`/api/auth/*`). Every
-  user's data is isolated.
-- **Settings** — each user's own categories, keywords, routing, and on/off
-  switch (`/api/settings`).
-- **Classification** — `/api/simulate` runs an email through the user's rules
-  using **Groq (Llama 3.3)**, with a keyword fallback so it never hard-fails.
-- **Ingestion** — `POST /api/emails` is what the n8n workflow calls to hand over
-  each classified email; it's upserted per user (so base + enrichment merge).
-- **Dashboard data** — `GET /api/emails` and `/api/stats`, scoped to the
-  logged-in user.
-
-Key files: `src/index.js` (routes), `src/db.js` (Mongo + queries),
-`src/auth.js`, `src/settings.js`, `src/classify.js`, `src/seed.js` (demo data).
-
-### `frontend/` — what people see
-A **React** app: a public landing page, a login screen, and the app behind it
-(Dashboard · Simulate · Settings · Help). It only ever talks to the backend
-over `/api`.
-
-### `n8n/` — the real-Gmail automation
-The workflow that polls a real inbox and pushes classified email into the
-backend. Optional — the product works without it (via **Simulate**). See
-[`n8n/README.md`](n8n/README.md).
-
----
-
-## Run it locally
-
-**Option A — Docker (everything at once):**
-```bash
-docker compose up -d --build
-```
-Dashboard → http://localhost:8080 · n8n → http://localhost:5678 · API → http://localhost:4000
-
-**Option B — dev mode (backend + frontend separately):**
-```bash
-# backend  (reads backend/.env — MongoDB, Groq, JWT)
-cd backend && npm install && npm run seed && npm start      # :4000
-
-# frontend
-cd frontend && npm install && npm run dev                   # :5173
+```mermaid
+flowchart LR
+  Gmail --> n8n
+  n8n --> Groq
+  n8n --> Discord
+  n8n --> Sheets[Google Sheets]
+  n8n --> API[Express API]
+  Simulator --> API
+  API --> MongoDB
+  API --> Dashboard[React dashboard]
 ```
 
-**Demo login:** `demo@smartinbox.app` / `demo1234` (or the one-click button).
+| Path | Purpose |
+| --- | --- |
+| backend/ | JWT accounts, settings, classification, ingestion, Gmail OAuth and n8n provisioning |
+| frontend/ | React/Vite dashboard, simulation and settings |
+| n8n/ | Importable automation workflow and deployment notes |
+| docker-compose.yml, render.yaml | Deployment examples requiring environment review |
 
-## Configuration
+## Run locally
 
-Copy each `.env.example` to `.env` (all git-ignored):
+Use Node.js 22 and a local/disposable MongoDB database. The dashboard's simulator can run without connecting Gmail or n8n.
 
-- `backend/.env` — `MONGODB_URI`, `MONGODB_DB`, `JWT_SECRET`, `GROQ_API_KEY`,
-  `INGEST_EMAIL` (the account n8n's real emails land in)
-- root `.env` — optional overrides for docker-compose
+```sh
+npm ci --prefix backend
+npm ci --prefix frontend
+cp backend/.env.example backend/.env
+# Configure a local database and independent JWT/CRED secrets.
+cd backend
+npm run dev
+# In a separate terminal, from frontend/:
+npm run dev
+```
 
-## Deploy
+API: http://localhost:4000. Frontend: http://localhost:5173. Vite proxies /api during development. Seeding is optional and creates a known demonstration account; run npm run seed only against a disposable development database. Never put private email in the public demo account.
 
-- **Backend** → Render (free; data lives in MongoDB Atlas)
-- **Frontend** → Vercel (root dir = `frontend`; set the backend URL in `vercel.json`)
-- **n8n** → Render via `render.yaml` (free tier needs Postgres + a keep-alive
-  pinger — see the notes in `render.yaml`)
+For real mail, follow [n8n setup](n8n/README.md) and configure your own Gmail OAuth app, n8n API credentials, routing destinations and scopes. Connecting services can send messages or create workflows; CI does none of those operations.
 
-## Security notes
-- Secrets live in `.env` files (git-ignored). The Groq key and Discord webhooks
-  are currently inside the n8n workflow JSON — keep the repo **private** or
-  rotate them before pushing.
-- `POST /api/emails` is open (used by n8n). Add a shared key before exposing the
-  backend publicly if you want to lock it down.
+## Verification and limits
+
+CI builds the frontend and runs isolated classification/encryption tests. Synthetic tests cover keyword routing, model fallback and authenticated-encryption tamper detection; they do not validate MongoDB isolation, OAuth permissions, real n8n delivery, external-service uptime or production security.
+
+The legacy ingestion fallback and development secret defaults need review before handling private mail. See [security](SECURITY.md), [configuration](docs/configuration.md) and [testing](docs/testing.md).
+
+## Maintenance status
+
+See [verification](docs/verification.md) for checks actually run and [dependency health](docs/dependency-health.md) for remaining findings.
+
+## Contributing and maintenance
+
+[Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md)
+
+## License
+
+[MIT](LICENSE) for original contributions the maintainer is authorized to license. Third-party and collaborator rights remain separate; see [license scope](docs/license-scope.md).

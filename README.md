@@ -6,7 +6,7 @@ Smart Inbox is an email-triage dashboard with a Node/Express API, MongoDB storag
 
 ## Live demo video
 
-https://github.com/user-attachments/assets/c9ac15b5-fda7-4c13-ac75-2968706ebe76
+https://github.com/user-attachments/assets/ff60de73-76d4-4c14-b130-7e929ca868ce
 
 [Download video](docs/media/smart-inbox-demo.mp4) · [HTML presentation source](docs/media/smart-inbox-demo.html)
 
